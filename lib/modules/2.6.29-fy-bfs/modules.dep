@@ -1,0 +1,6 @@
+kernel/fs/mbcache.ko:
+kernel/fs/ext3/ext3.ko: kernel/fs/jbd/jbd.ko kernel/fs/mbcache.ko
+kernel/fs/ext2/ext2.ko: kernel/fs/mbcache.ko
+kernel/fs/jbd/jbd.ko:
+kernel/drivers/hid/hid-dummy.ko:
+kernel/lib/crc16.ko:
