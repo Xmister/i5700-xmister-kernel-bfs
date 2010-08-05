@@ -84,6 +84,7 @@ static uint32_t bytes_per_pixel[] = {
 	[MDP_Y_CBCR_H2V1] = 1,
 	[MDP_RGBA_8888] = 4,
 	[MDP_BGRA_8888] = 4,
+	[MDP_RGBX_8888] = 4,
 };
 
 static uint32_t dst_op_chroma[] = {
