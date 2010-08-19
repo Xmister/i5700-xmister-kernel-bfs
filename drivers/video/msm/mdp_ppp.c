@@ -622,7 +622,6 @@ void put_img(struct mdp_blit_req *req)
 	put_pmem_fd(req->dst.memory_id);
 #endif
 }
-
 #endif
 
 static void flush_imgs(struct mdp_blit_req *req, struct mdp_regs *regs,

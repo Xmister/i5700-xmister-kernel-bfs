@@ -622,6 +622,12 @@ if MSM_CAMERA
 source "drivers/media/video/msm/Kconfig"
 endif
 
+config MSM_CAMERA_DEBUG
+	bool "Qualcomm MSM camera debugging with printk"
+	depends on MSM_CAMERA
+	help
+	  Enable printk() debug for msm camera
+
 config VIDEO_VINO
 	tristate "SGI Vino Video For Linux (EXPERIMENTAL)"
 	depends on I2C && SGI_IP22 && EXPERIMENTAL && VIDEO_V4L2

@@ -345,15 +345,12 @@ static struct msm_camera_device_platform_data msm_camera_device_data = {
 	.ioext.appsz  = MSM_CLK_CTL_SIZE,
 };
 
-#define BAHAMAS_GPIO_VCM_PWDN 117 // guess
-
 static struct msm_camera_sensor_info msm_camera_sensor_mt9t013_data = {
 	.sensor_name    = "mt9t013",
 	.sensor_reset   = 118,
 	.sensor_pwd     = BAHAMAS_MT9T013_CAM_PWDN,
 	.vcm_pwd        = BAHAMAS_GPIO_VCM_PWDN,
 	.pdata          = &msm_camera_device_data,
-	.flash_type     = MSM_CAMERA_FLASH_NONE
 };
 
 static struct platform_device msm_camera_sensor_mt9t013 = {
