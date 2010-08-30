@@ -105,6 +105,11 @@ static int __init msm_cpufreq_init(struct cpufreq_policy *policy)
 		acpuclk_get_switch_time() * NSEC_PER_USEC;
 	return 0;
 }
+ 
+static struct freq_attr *msm_cpufreq_attr[] = {
+	&cpufreq_freq_attr_scaling_available_freqs,
+	NULL,
+};
 
 static struct cpufreq_driver msm_cpufreq_driver = {
 	/* lps calculations are handled here. */
@@ -113,6 +118,7 @@ static struct cpufreq_driver msm_cpufreq_driver = {
 	.verify		= msm_cpufreq_verify,
 	.target		= msm_cpufreq_target,
 	.name		= "msm",
+	.attr		= msm_cpufreq_attr,
 };
 
 static int __init msm_cpufreq_register(void)

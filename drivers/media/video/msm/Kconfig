@@ -1,7 +1,3 @@
-config MSM_CAMERA_OLD
-  bool "Use old camera implementation"
-  depends on MSM_CAMERA
-
 comment "Camera Sensor Selection"
 config MT9T013
 	bool "Sensor mt9t013 (BAYER 3M)"
@@ -18,6 +14,11 @@ config MT9D112
 	---help---
 	  MICRON 2M YUV Sensor
 	  
+config S5K4B2FX
+	bool "Sensor s5k4b2fx (BAYER 2M)"
+	---help---
+	  SAMSUNG 2M BAYER Sensor
+
 config S5K3E2FX
 	bool "Sensor s5k3e2fx (BAYER 5M)"
 	---help---

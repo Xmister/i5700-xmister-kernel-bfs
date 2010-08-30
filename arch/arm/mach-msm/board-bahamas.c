@@ -70,7 +70,7 @@
 #include <mach/htc_pwrsink.h>
 #include <mach/perflock.h>
 #include <mach/drv_callback.h>
-#include <mach/camera.h>
+#include <mach/camera.h>  /*CC090518*/
 
 void msm_init_irq(void);
 void msm_init_gpio(void);
@@ -79,10 +79,11 @@ void config_bahamas_camera_on_gpios(void);
 void config_bahamas_camera_off_gpios(void);
 
 extern int bahamas_init_mmc(unsigned int);
-
+/*CC090319*/
 static unsigned int hwid;
 static unsigned int skuid;
 static unsigned engineerid;
+/*~CC090319*/
 
 enum {
 	PANEL_HITACHI = 0,
@@ -336,28 +337,47 @@ static struct platform_device sd_door_switch = {
 };
 #endif
 
-static struct msm_camera_device_platform_data msm_camera_device_data = {
+#define MSM_PROBE_INIT(name) name##_probe_init   /*CC090518*/
+static struct msm_camera_sensor_info msm_camera_sensor = {
+	.sensor_reset	= 118,
+	//.sensor_pwd	  = 107,
+	//.vcm_pwd	= 117,     /* FIXME: by Bahamas GPIO table,*/
+	.sensor_name  = "s5k4b2fx",
+//	},
+};
+/*CC090519*/
+int s5k4b2fx_probe_init(void *dev, void *ctrl)
+{
+	return -1;
+}
+/*CC090519~*/
+
+/*CC090319*/
+static struct msm_camera_sensor_info msm_camera_sensor_s5k4b2fx = {
+	.sensor_reset	= 118,
+	.sensor_name  = "s5k4b2fx",
+	.sensor_probe = MSM_PROBE_INIT(s5k4b2fx),   /*CC090519*/
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_mt9t013 = {
+	.sensor_reset	= 118,  /*CC090319*/
+	.sensor_pwd	  = BAHAMAS_MT9T013_CAM_PWDN,  /*CC090320, set CAM POWER DOWN GPIO=091*/
+	.sensor_name  = "mt9t013",
+	.sensor_probe = MSM_PROBE_INIT(mt9t013),   /*CC090518*/
+};
+/*~CC090319*/
+#undef MSM_PROBE_INIT    /*CC090518*/
+
+static struct msm_camera_platform_data msm_camera_device_data = {
 	.camera_gpio_on  = config_bahamas_camera_on_gpios,
 	.camera_gpio_off = config_bahamas_camera_off_gpios,
+	.snum = 1,
+	.sinfo = &msm_camera_sensor,
+	/*CC090414*/
 	.ioext.mdcphy = MSM_MDC_PHYS,
 	.ioext.mdcsz  = MSM_MDC_SIZE,
 	.ioext.appphy = MSM_CLK_CTL_PHYS,
 	.ioext.appsz  = MSM_CLK_CTL_SIZE,
-};
-
-static struct msm_camera_sensor_info msm_camera_sensor_mt9t013_data = {
-	.sensor_name    = "mt9t013",
-	.sensor_reset   = 118,
-	.sensor_pwd     = BAHAMAS_MT9T013_CAM_PWDN,
-	.vcm_pwd        = BAHAMAS_GPIO_VCM_PWDN,
-	.pdata          = &msm_camera_device_data,
-};
-
-static struct platform_device msm_camera_sensor_mt9t013 = {
-	.name           = "msm_camera_mt9t013",
-	.dev            = {
-		.platform_data = &msm_camera_sensor_mt9t013_data,
-	},
 };
 
 static struct akm8973_platform_data compass_platform_data = {
@@ -369,13 +389,22 @@ static struct bma150_platform_data gsensor_platform_data = {
 	.intr = BAHAMA_GPIO_GSENSOR_INT_N,
 };
 
+/*CC090505*/
 static struct i2c_board_info i2c_devices[] = {
 	{
-		I2C_BOARD_INFO("mt9t013", 0x6C),   /* 3M bayer sensor driver */
-		.platform_data = &msm_camera_device_data,
+		/*CC090519*/
+		/*I2C_BOARD_INFO("s5k4b2fx", 0x22 >> 1),*/
+		I2C_BOARD_INFO("s5k4b2fx", 0x22),
+		/*CC090519~*/
+		/* .irq = TROUT_GPIO_TO_INT(TROUT_GPIO_CAM_BTN_STEP1_N), */
+	},
+	/*CC090414*/
+	{
+		I2C_BOARD_INFO("mt9t013", 0x6C),   /*3M bayer sensor driver*/    /*CC090518*/
+		.platform_data = &msm_camera_device_data, /*CC090505*/
 	},
 };
-
+/*CC090505~*/
 static struct i2c_board_info i2c_sensor[] = {
 	{
 		I2C_BOARD_INFO(AKM8973_I2C_NAME, 0x1C),
@@ -392,13 +421,14 @@ static struct i2c_board_info i2c_sensor[] = {
 
 static struct platform_device msm_camera_device = {
 	.name		= "msm_camera",
-	.id			= -1,
+	//.id		= 0,
+	.id		= -1,
 	.dev		= {
 		.platform_data = &msm_camera_device_data,
 	},
 };
 
-static struct platform_device bahamas_camera = {
+static struct platform_device trout_camera = {
 	.name		= "camera",
 	.dev		= { 
 		.platform_data = &msm_camera_device,
@@ -731,14 +761,9 @@ static struct platform_device *devices[] __initdata = {
 	&msm_device_smd,
 	&msm_device_nand,
 	&msm_device_i2c,
-	&msm_device_uart1,
-#ifdef CONFIG_MT9T013
-	&msm_camera_sensor_mt9t013,
-#endif
-	&bahamas_camera,
-#ifdef CONFIG_HTC_HEADSET
+	//&sd_door_switch,
+	&trout_camera,
 	&bahamas_h2w,
-#endif
 	&bahamas_audio_jack,
 	&tssc_ts_device,
 	&msm_camera_device,
@@ -1029,8 +1054,13 @@ static void __init bahamas_init(void)
 #endif
 	if(!system_rev)
 		bahamas_reset_keys_device.dev.platform_data = &bahamas_reset_keys_pdata0;
-
-	if  (bahamas_is_3M_camera()) {}; // true of course, cn.fyodor
+	/*CC090319*/
+	if  (bahamas_is_3M_camera())   {
+		msm_camera_device_data.sinfo = &msm_camera_sensor_mt9t013;
+		}
+	else  {
+		msm_camera_device_data.sinfo = &msm_camera_sensor_s5k4b2fx;
+	}
 
 	if(system_rev < 3) {
 		if (panel_detect() == PANEL_WINTEK) {
@@ -1046,6 +1076,7 @@ static void __init bahamas_init(void)
 		microp_data.pin_config = microp_pins_1_wint;
 	}
 
+/*~CC090319*/
 	platform_add_devices(devices, ARRAY_SIZE(devices));
 
 	/* Read Config 8 200 (Full Speed USB Mode) */
@@ -1064,7 +1095,7 @@ static void __init bahamas_init(void)
 	/* SD card door should wake the device */
 	//trout_gpio_irq_set_wake(TROUT_GPIO_TO_INT(TROUT_GPIO_SD_DOOR_N), 1);
 }
-
+/*CC090319*/
 unsigned int bahamas_get_hwid(void)
 {
 	printk("bahamas_get_hwid=0x%x\r\n", hwid);
@@ -1090,14 +1121,17 @@ int bahamas_is_3M_camera(void)
 	printk("bahamas_is_3M_camera, PCBID=0x%x\r\n", system_rev);
 
 	if (system_rev > 1)
-		ret  = 1;
+		ret  = 1;    /*CC09031, system_rev==PCBID */
 
 	return ret;
 }
+/*~CC090319*/
 
 static void __init bahamas_fixup(struct machine_desc *desc, struct tag *tags,
                                char **cmdline, struct meminfo *mi)
 {
+	/*CC090319*/
+
 	hwid = 0;
 	skuid = 0;
 	engineerid = (0x01 << 1);
@@ -1109,6 +1143,7 @@ static void __init bahamas_fixup(struct machine_desc *desc, struct tag *tags,
 	engineerid = parse_tag_engineerid((const struct tag *)tags);
 	printk("bahamas_fixup:engineerid=0x%x\n", engineerid);
 	parse_tag_monodie((const struct tag *)tags);
+	/*~CC090319*/
 
 	if (board_mcp_monodie()) {
 		mi->nr_banks=1;

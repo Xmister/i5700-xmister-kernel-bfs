@@ -34,7 +34,6 @@ obj-$(CONFIG_HTC_BATTCHG) += htc_battery.o
 obj-$(CONFIG_MACH_BAHAMAS) += board-bahamas.o board-click-panel.o board-bahamas-keypad.o
 obj-$(CONFIG_MACH_BAHAMAS) += board-bahamas-mmc.o
 obj-$(CONFIG_MACH_BAHAMAS) += board-bahamas-rfkill.o
-obj-$(CONFIG_MACH_BAHAMAS) += htc_akm_cal.o
 
 
 obj-$(CONFIG_PERFLOCK) += perflock.o

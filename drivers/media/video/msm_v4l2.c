@@ -1,18 +1,6 @@
-/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+/*
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
+ * Copyright (C) 2008-2009 QUALCOMM Incorporated.
  *
  */
 
@@ -30,13 +18,15 @@
 #include <media/v4l2-ioctl.h>
 /*#include <linux/platform_device.h>*/
 
+
 #define MSM_V4L2_START_SNAPSHOT _IOWR('V', BASE_VIDIOC_PRIVATE+1, \
       struct v4l2_buffer)
 
 #define MSM_V4L2_GET_PICTURE    _IOWR('V', BASE_VIDIOC_PRIVATE+2, \
       struct v4l2_buffer)
 
-#define MSM_V4L2_DEVICE_NAME       "msm_v4l2"
+#define MSM_V4L2_DRIVER_NAME       "MSM_V4L2"
+#define MSM_V4L2_DEVICE_NAME       "MSM_V4L2"
 
 #define MSM_V4L2_PROC_NAME         "msm_v4l2"
 
@@ -44,8 +34,8 @@
 #define MSM_V4L2_DEVNUM_YUV         20
 
 /* HVGA-P (portrait) and HVGA-L (landscape) */
-#define MSM_V4L2_WIDTH              320
-#define MSM_V4L2_HEIGHT             240
+#define MSM_V4L2_WIDTH              480
+#define MSM_V4L2_HEIGHT             320
 
 #if 1
 #define D(fmt, args...) printk(KERN_INFO "msm_v4l2: " fmt, ##args)
@@ -55,91 +45,109 @@
 
 #define PREVIEW_FRAMES_NUM 4
 
-struct msm_v4l2_device {
+struct msm_v4l2_device_t {
 	struct list_head read_queue;
 	struct v4l2_format current_cap_format;
 	struct v4l2_format current_pix_format;
 	struct video_device *pvdev;
-	struct msm_v4l2_driver *drv;
+	struct msm_driver   *drv;
 	uint8_t opencnt;
 
 	spinlock_t read_queue_lock;
 };
 
-static struct msm_v4l2_device *g_pmsm_v4l2_dev;
+static struct msm_v4l2_device_t *g_pmsm_v4l2_dev;
+
 
 static DEFINE_MUTEX(msm_v4l2_opencnt_lock);
 
-static int msm_v4l2_open(struct file *f)
+static int msm_v4l2_open(struct inode *inode, struct file *f)
 {
-	int rc = 0;
+	long rc = -EFAULT;
+
 	D("%s\n", __func__);
+	D("%s, %s\n", __DATE__, __TIME__);
+
 	mutex_lock(&msm_v4l2_opencnt_lock);
-	if (!g_pmsm_v4l2_dev->opencnt) {
-		rc = g_pmsm_v4l2_dev->drv->open(g_pmsm_v4l2_dev->drv->sync,
-						MSM_APPS_ID_V4L2);
-	}
-	g_pmsm_v4l2_dev->opencnt++;
+	g_pmsm_v4l2_dev->opencnt += 1;
 	mutex_unlock(&msm_v4l2_opencnt_lock);
+
+	if (g_pmsm_v4l2_dev->opencnt == 1) {
+		rc = msm_register(g_pmsm_v4l2_dev->drv, MSM_V4L2_DRIVER_NAME);
+		if (rc < 0) {
+			D("%s: msm_register failed...\n", __func__);
+			return rc;
+		}
+		rc =
+		g_pmsm_v4l2_dev->drv->init(g_pmsm_v4l2_dev->drv->vmsm);
+	} else {
+		rc = 0;
+	}
+
 	return rc;
 }
 
-static int msm_v4l2_release(struct file *f)
+static ssize_t msm_v4l2_read(struct file *f,
+	char __user *d, size_t count, loff_t *ppos)
 {
-	int rc = 0;
 	D("%s\n", __func__);
-	mutex_lock(&msm_v4l2_opencnt_lock);
-	if (!g_pmsm_v4l2_dev->opencnt) {
-		g_pmsm_v4l2_dev->opencnt--;
-		if (!g_pmsm_v4l2_dev->opencnt) {
-			rc = g_pmsm_v4l2_dev->drv->release(g_pmsm_v4l2_dev->
-							   drv->sync);
-		}
-	}
-	mutex_unlock(&msm_v4l2_opencnt_lock);
-	return rc;
+
+	return 0;
 }
 
 static unsigned int msm_v4l2_poll(struct file *f, struct poll_table_struct *w)
 {
-	return g_pmsm_v4l2_dev->drv->drv_poll(g_pmsm_v4l2_dev->drv->sync, f, w);
+	return g_pmsm_v4l2_dev->drv->drv_poll(f, w,
+		g_pmsm_v4l2_dev->drv->vmsm);
 }
 
-static long msm_v4l2_ioctl(struct file *filep,
+static int msm_v4l2_release(struct inode *inode, struct file *f)
+{
+	D("%s\n", __func__);
+	return 0;
+}
+
+static int msm_v4l2_ioctl(struct inode *inode,
+			   struct file *filep,
 			   unsigned int cmd, unsigned long arg)
 {
-	struct msm_ctrl_cmd *ctrlcmd;
+	struct msm_ctrl_cmd_t *ctrlcmd;
 
 	D("msm_v4l2_ioctl, cmd = %d, %d\n", cmd, __LINE__);
 
 	switch (cmd) {
 	case MSM_V4L2_START_SNAPSHOT:
 
-		ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd), GFP_ATOMIC);
+		ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd_t), GFP_ATOMIC);
 		if (!ctrlcmd) {
 			CDBG("msm_v4l2_ioctl: cannot allocate buffer\n");
 			return -ENOMEM;
 		}
 
-		ctrlcmd->length = 0;
-		ctrlcmd->value = NULL;
+		ctrlcmd->length     = 0;
+		ctrlcmd->value      = NULL;
 		ctrlcmd->timeout_ms = 10000;
 
 		D("msm_v4l2_ioctl,  MSM_V4L2_START_SNAPSHOT v4l2 ioctl %d\n",
-		  cmd);
+		cmd);
 		ctrlcmd->type = MSM_V4L2_SNAPSHOT;
-		return g_pmsm_v4l2_dev->drv->ctrl(g_pmsm_v4l2_dev->drv->sync,
-						  ctrlcmd);
+		return g_pmsm_v4l2_dev->drv->ctrl(ctrlcmd,
+				g_pmsm_v4l2_dev->drv->vmsm);
 
 	case MSM_V4L2_GET_PICTURE:
 		D("msm_v4l2_ioctl,  MSM_V4L2_GET_PICTURE v4l2 ioctl %d\n", cmd);
-		ctrlcmd = (struct msm_ctrl_cmd *)arg;
-		return g_pmsm_v4l2_dev->drv->get_pict(g_pmsm_v4l2_dev->drv->
-						      sync, ctrlcmd);
+		ctrlcmd = (struct msm_ctrl_cmd_t *)arg;
+		return g_pmsm_v4l2_dev->drv->get_pict(ctrlcmd,
+						g_pmsm_v4l2_dev->drv->vmsm);
 
 	default:
 		D("msm_v4l2_ioctl, standard v4l2 ioctl %d\n", cmd);
-		return video_ioctl2(filep, cmd, arg);
+		/*CC090611*/ 
+		/*
+		return video_ioctl2(inode, filep, cmd, arg);
+		*/
+		return (int) video_ioctl2(filep, cmd, arg);
+		/*CC090611~*/ 
 	}
 }
 
@@ -152,38 +160,41 @@ static int msm_v4l2_querycap(struct file *f,
 			     void *pctx, struct v4l2_capability *pcaps)
 {
 	D("%s\n", __func__);
-	strncpy(pcaps->driver, MSM_APPS_ID_V4L2, sizeof(pcaps->driver));
-	strncpy(pcaps->card, MSM_V4L2_DEVICE_NAME, sizeof(pcaps->card));
+	strncpy(pcaps->driver, MSM_V4L2_DRIVER_NAME,
+		strlen(MSM_V4L2_DRIVER_NAME));
+	strncpy(pcaps->card, MSM_V4L2_DEVICE_NAME,
+		strlen(MSM_V4L2_DEVICE_NAME));
 	pcaps->capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING;
 	return 0;
 }
 
-static int msm_v4l2_s_std(struct file *f, void *pctx, v4l2_std_id * pnorm)
+static int msm_v4l2_s_std(struct file *f, void *pctx, v4l2_std_id *pnorm)
 {
 	D("%s\n", __func__);
 	return 0;
 }
 
 static int msm_v4l2_queryctrl(struct file *f,
-			      void *pctx, struct v4l2_queryctrl *pqctrl)
+				void *pctx, struct v4l2_queryctrl *pqctrl)
 {
-	int rc = 0;
-	struct msm_ctrl_cmd *ctrlcmd;
+  int rc = 0;
+  struct msm_ctrl_cmd_t *ctrlcmd;
 
 	D("%s\n", __func__);
 
-	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd), GFP_ATOMIC);
+	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd_t), GFP_ATOMIC);
 	if (!ctrlcmd) {
 		CDBG("msm_v4l2_queryctrl: cannot allocate buffer\n");
 		return -ENOMEM;
 	}
 
-	ctrlcmd->type = MSM_V4L2_QUERY_CTRL;
-	ctrlcmd->length = sizeof(struct v4l2_queryctrl);
-	ctrlcmd->value = pqctrl;
+	ctrlcmd->type       = MSM_V4L2_QUERY_CTRL;
+	ctrlcmd->length     = sizeof(struct v4l2_queryctrl);
+	ctrlcmd->value      = pqctrl;
 	ctrlcmd->timeout_ms = 10000;
 
-	rc = g_pmsm_v4l2_dev->drv->ctrl(g_pmsm_v4l2_dev->drv->sync, ctrlcmd);
+	rc = g_pmsm_v4l2_dev->drv->ctrl(ctrlcmd,
+		g_pmsm_v4l2_dev->drv->vmsm);
 	if (rc < 0)
 		return -1;
 
@@ -193,22 +204,23 @@ static int msm_v4l2_queryctrl(struct file *f,
 static int msm_v4l2_g_ctrl(struct file *f, void *pctx, struct v4l2_control *c)
 {
 	int rc = 0;
-	struct msm_ctrl_cmd *ctrlcmd;
+	struct msm_ctrl_cmd_t *ctrlcmd;
 
 	D("%s\n", __func__);
 
-	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd), GFP_ATOMIC);
+	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd_t), GFP_ATOMIC);
 	if (!ctrlcmd) {
 		CDBG("msm_v4l2_g_ctrl: cannot allocate buffer\n");
 		return -ENOMEM;
 	}
 
-	ctrlcmd->type = MSM_V4L2_GET_CTRL;
-	ctrlcmd->length = sizeof(struct v4l2_control);
-	ctrlcmd->value = c;
+	ctrlcmd->type       = MSM_V4L2_GET_CTRL;
+	ctrlcmd->length     = sizeof(struct v4l2_control);
+	ctrlcmd->value      = c;
 	ctrlcmd->timeout_ms = 10000;
 
-	rc = g_pmsm_v4l2_dev->drv->ctrl(g_pmsm_v4l2_dev->drv->sync, ctrlcmd);
+	rc = g_pmsm_v4l2_dev->drv->ctrl(ctrlcmd,
+		g_pmsm_v4l2_dev->drv->vmsm);
 	if (rc < 0)
 		return -1;
 
@@ -218,22 +230,23 @@ static int msm_v4l2_g_ctrl(struct file *f, void *pctx, struct v4l2_control *c)
 static int msm_v4l2_s_ctrl(struct file *f, void *pctx, struct v4l2_control *c)
 {
 	int rc = 0;
-	struct msm_ctrl_cmd *ctrlcmd;
+	struct msm_ctrl_cmd_t *ctrlcmd;
 
-	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd), GFP_ATOMIC);
+	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd_t), GFP_ATOMIC);
 	if (!ctrlcmd) {
 		CDBG("msm_v4l2_s_ctrl: cannot allocate buffer\n");
 		return -ENOMEM;
 	}
 
-	ctrlcmd->type = MSM_V4L2_SET_CTRL;
-	ctrlcmd->length = sizeof(struct v4l2_control);
-	ctrlcmd->value = c;
+	ctrlcmd->type       = MSM_V4L2_SET_CTRL;
+	ctrlcmd->length     = sizeof(struct v4l2_control);
+	ctrlcmd->value      = c;
 	ctrlcmd->timeout_ms = 10000;
 
 	D("%s\n", __func__);
 
-	rc = g_pmsm_v4l2_dev->drv->ctrl(g_pmsm_v4l2_dev->drv->sync, ctrlcmd);
+	rc = g_pmsm_v4l2_dev->drv->ctrl(ctrlcmd,
+		g_pmsm_v4l2_dev->drv->vmsm);
 	if (rc < 0)
 		return -1;
 
@@ -249,7 +262,7 @@ static int msm_v4l2_reqbufs(struct file *f,
 
 static int msm_v4l2_querybuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 {
-	struct msm_pmem_info pmem_buf;
+	struct msm_pmem_info_t pmem_buf;
 #if 0
 	__u32 width = 0;
 	__u32 height = 0;
@@ -267,36 +280,37 @@ static int msm_v4l2_querybuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 	y_pad = y_size % 4;
 #endif
 
-	__u32 y_pad = pb->bytesused % 4;
+    __u32 y_pad = pb->bytesused % 4;
 
 	/* V4L2 videodev will do the copy_from_user. */
 
-	memset(&pmem_buf, 0, sizeof(struct msm_pmem_info));
+	memset(&pmem_buf, 0, sizeof(struct msm_pmem_info_t));
 	pmem_buf.type = MSM_PMEM_OUTPUT2;
 	pmem_buf.vaddr = (void *)pb->m.userptr;
 	pmem_buf.y_off = 0;
 	pmem_buf.fd = (int)pb->reserved;
 	/* pmem_buf.cbcr_off = (y_size + y_pad); */
-	pmem_buf.cbcr_off = (pb->bytesused + y_pad);
+    pmem_buf.cbcr_off = (pb->bytesused + y_pad);
 
-	g_pmsm_v4l2_dev->drv->reg_pmem(g_pmsm_v4l2_dev->drv->sync, &pmem_buf);
+	g_pmsm_v4l2_dev->drv->reg_pmem(&pmem_buf,
+		g_pmsm_v4l2_dev->drv->vmsm);
 
 	return 0;
 }
 
 static int msm_v4l2_qbuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 {
-	/*
-	   __u32 y_size = 0;
-	   __u32 y_pad = 0;
-	   __u32 width = 0;
-	   __u32 height = 0;
-	 */
+    /*
+	__u32 y_size = 0;
+	__u32 y_pad = 0;
+	__u32 width = 0;
+	__u32 height = 0;
+    */
 
 	__u32 y_pad = 0;
 
-	struct msm_pmem_info meminfo;
-	struct msm_frame frame;
+	struct msm_pmem_info_t meminfo;
+	struct msm_frame_t frame;
 	static int cnt;
 
 	if ((pb->flags >> 16) & 0x0001) {
@@ -316,62 +330,65 @@ static int msm_v4l2_qbuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 		if (pb->type == V4L2_BUF_TYPE_PRIVATE) {
 			/* this qbuf is actually for releasing */
 
-			frame.buffer = pb->m.userptr;
-			frame.y_off = 0;
+			frame.buffer           = pb->m.userptr;
+			frame.y_off            = 0;
 			/* frame.cbcr_off = (y_size + y_pad); */
-			frame.cbcr_off = (pb->bytesused + y_pad);
-			frame.fd = pb->reserved;
+			frame.cbcr_off         = (pb->bytesused + y_pad);
+			frame.fd               = pb->reserved;
 
 			D("V4L2_BUF_TYPE_PRIVATE: pb->bytesused = %d \n",
-			  pb->bytesused);
+			pb->bytesused);
 
-			g_pmsm_v4l2_dev->drv->put_frame(g_pmsm_v4l2_dev->drv->
-							sync, &frame);
+			g_pmsm_v4l2_dev->drv->put_frame(&frame,
+				g_pmsm_v4l2_dev->drv->vmsm);
 
 			return 0;
 		}
 
 		D("V4L2_BUF_TYPE_VIDEO_CAPTURE: pb->bytesused = %d \n",
-		  pb->bytesused);
+		pb->bytesused);
 
-		meminfo.type = MSM_PMEM_OUTPUT2;
-		meminfo.fd = (int)pb->reserved;
-		meminfo.vaddr = (void *)pb->m.userptr;
-		meminfo.y_off = 0;
+		meminfo.type             = MSM_PMEM_OUTPUT2;
+		meminfo.fd               = (int)pb->reserved;
+		meminfo.vaddr            = (void *)pb->m.userptr;
+		meminfo.y_off            = 0;
 		/* meminfo.cbcr_off = (y_size + y_pad); */
-		meminfo.cbcr_off = (pb->bytesused + y_pad);
-		meminfo.vfe_can_write =
-			cnt != PREVIEW_FRAMES_NUM - 1;
+		meminfo.cbcr_off         = (pb->bytesused + y_pad);
+		if (cnt == PREVIEW_FRAMES_NUM - 1)
+			meminfo.active = 0;
+		else
+			meminfo.active = 1;
 		cnt++;
-		g_pmsm_v4l2_dev->drv->reg_pmem(g_pmsm_v4l2_dev->drv->sync,
-					       &meminfo);
+		g_pmsm_v4l2_dev->drv->reg_pmem(&meminfo,
+			g_pmsm_v4l2_dev->drv->vmsm);
+
 	} else if ((pb->flags) & 0x0001) {
 		/* this is for snapshot */
 
-		__u32 y_size = 0;
+	__u32 y_size = 0;
 
-		if ((pb->flags >> 8) & 0x01) {
+	if ((pb->flags >> 8) & 0x01) {
 
-			y_size = pb->bytesused;
+		y_size = pb->bytesused;
 
-			meminfo.type = MSM_PMEM_THUMBNAIL;
-		} else if ((pb->flags >> 9) & 0x01) {
+		meminfo.type = MSM_PMEM_THUMBNAIL;
+	} else if ((pb->flags >> 9) & 0x01) {
 
-			y_size = pb->bytesused;
+		y_size = pb->bytesused;
 
-			meminfo.type = MSM_PMEM_MAINIMG;
-		}
+		meminfo.type = MSM_PMEM_MAINIMG;
+	}
 
-		y_pad = y_size % 4;
+	y_pad = y_size % 4;
 
-		meminfo.fd = (int)pb->reserved;
-		meminfo.vaddr = (void *)pb->m.userptr;
-		meminfo.y_off = 0;
-		/* meminfo.cbcr_off = (y_size + y_pad); */
-		meminfo.cbcr_off = (y_size + y_pad);
-		meminfo.vfe_can_write = 1;
-		g_pmsm_v4l2_dev->drv->reg_pmem(g_pmsm_v4l2_dev->drv->sync,
-					       &meminfo);
+	meminfo.fd         = (int)pb->reserved;
+	meminfo.vaddr      = (void *)pb->m.userptr;
+	meminfo.y_off      = 0;
+	/* meminfo.cbcr_off = (y_size + y_pad); */
+	meminfo.cbcr_off   = (y_size + y_pad);
+	meminfo.active 	   = 1;
+	g_pmsm_v4l2_dev->drv->reg_pmem(&meminfo,
+		g_pmsm_v4l2_dev->drv->vmsm);
 	}
 
 	return 0;
@@ -379,7 +396,7 @@ static int msm_v4l2_qbuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 
 static int msm_v4l2_dqbuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 {
-	struct msm_frame frame;
+	struct msm_frame_t frame;
 	D("%s\n", __func__);
 
 	/* V4L2 videodev will do the copy_to_user. */
@@ -387,27 +404,27 @@ static int msm_v4l2_dqbuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 
 		D("%s, %d\n", __func__, __LINE__);
 
-		g_pmsm_v4l2_dev->drv->get_frame(g_pmsm_v4l2_dev->drv->sync,
-						&frame);
+		g_pmsm_v4l2_dev->drv->get_frame(&frame,
+			g_pmsm_v4l2_dev->drv->vmsm);
 
-		pb->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		pb->m.userptr = (unsigned long)frame.buffer;	/* FIXME */
-		pb->reserved = (int)frame.fd;
+		pb->type       = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		pb->m.userptr  = (unsigned long)frame.buffer;  /* FIXME */
+		pb->reserved   = (int)frame.fd;
 		/* pb->length     = (int)frame.cbcr_off; */
 
-		pb->bytesused = frame.cbcr_off;
+		pb->bytesused  = frame.cbcr_off;
 
 	} else if (pb->type == V4L2_BUF_TYPE_PRIVATE) {
-		__u32 y_pad = pb->bytesused % 4;
+		__u32 y_pad     = pb->bytesused % 4;
 
-		frame.buffer = pb->m.userptr;
-		frame.y_off = 0;
+		frame.buffer   = pb->m.userptr;
+		frame.y_off    = 0;
 		/* frame.cbcr_off = (y_size + y_pad); */
 		frame.cbcr_off = (pb->bytesused + y_pad);
-		frame.fd = pb->reserved;
+		frame.fd       = pb->reserved;
 
-		g_pmsm_v4l2_dev->drv->put_frame(g_pmsm_v4l2_dev->drv->sync,
-						&frame);
+		g_pmsm_v4l2_dev->drv->put_frame(&frame,
+			g_pmsm_v4l2_dev->drv->vmsm);
 	}
 
 	return 0;
@@ -415,22 +432,23 @@ static int msm_v4l2_dqbuf(struct file *f, void *pctx, struct v4l2_buffer *pb)
 
 static int msm_v4l2_streamon(struct file *f, void *pctx, enum v4l2_buf_type i)
 {
-	struct msm_ctrl_cmd *ctrlcmd;
+  struct msm_ctrl_cmd_t *ctrlcmd;
 
-	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd), GFP_ATOMIC);
+	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd_t), GFP_ATOMIC);
 	if (!ctrlcmd) {
 		CDBG("msm_v4l2_s_fmt_cap: cannot allocate buffer\n");
 		return -ENOMEM;
 	}
 
-	ctrlcmd->type = MSM_V4L2_STREAM_ON;
+	ctrlcmd->type       = MSM_V4L2_STREAM_ON;
 	ctrlcmd->timeout_ms = 10000;
-	ctrlcmd->length = 0;
-	ctrlcmd->value = NULL;
+	ctrlcmd->length     = 0;
+	ctrlcmd->value      = NULL;
 
 	D("%s\n", __func__);
 
-	g_pmsm_v4l2_dev->drv->ctrl(g_pmsm_v4l2_dev->drv->sync, ctrlcmd);
+	g_pmsm_v4l2_dev->drv->ctrl(ctrlcmd,
+		g_pmsm_v4l2_dev->drv->vmsm);
 
 	D("%s after drv->ctrl \n", __func__);
 
@@ -439,22 +457,24 @@ static int msm_v4l2_streamon(struct file *f, void *pctx, enum v4l2_buf_type i)
 
 static int msm_v4l2_streamoff(struct file *f, void *pctx, enum v4l2_buf_type i)
 {
-	struct msm_ctrl_cmd *ctrlcmd;
+  struct msm_ctrl_cmd_t *ctrlcmd;
 
-	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd), GFP_ATOMIC);
+	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd_t), GFP_ATOMIC);
 	if (!ctrlcmd) {
 		CDBG("msm_v4l2_s_fmt_cap: cannot allocate buffer\n");
 		return -ENOMEM;
 	}
 
-	ctrlcmd->type = MSM_V4L2_STREAM_OFF;
+	ctrlcmd->type       = MSM_V4L2_STREAM_OFF;
 	ctrlcmd->timeout_ms = 10000;
-	ctrlcmd->length = 0;
-	ctrlcmd->value = NULL;
+	ctrlcmd->length     = 0;
+	ctrlcmd->value      = NULL;
+
 
 	D("%s\n", __func__);
 
-	g_pmsm_v4l2_dev->drv->ctrl(g_pmsm_v4l2_dev->drv->sync, ctrlcmd);
+	g_pmsm_v4l2_dev->drv->ctrl(ctrlcmd,
+		g_pmsm_v4l2_dev->drv->vmsm);
 
 	return 0;
 }
@@ -476,7 +496,7 @@ static int msm_v4l2_enum_fmt_cap(struct file *f,
 		pfmtdesc->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		pfmtdesc->flags = 0;
 		strncpy(pfmtdesc->description, "YUV 4:2:0",
-			sizeof(pfmtdesc->description));
+			strlen("YUV 4:2:0"));
 		pfmtdesc->pixelformat = V4L2_PIX_FMT_YVU420;
 		break;
 	default:
@@ -505,20 +525,20 @@ static int msm_v4l2_g_fmt_cap(struct file *f,
 static int msm_v4l2_s_fmt_cap(struct file *f,
 			      void *pctx, struct v4l2_format *pfmt)
 {
-	struct msm_ctrl_cmd *ctrlcmd;
+  struct msm_ctrl_cmd_t *ctrlcmd;
 
 	D("%s\n", __func__);
 
-	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd), GFP_ATOMIC);
+	ctrlcmd = kmalloc(sizeof(struct msm_ctrl_cmd_t), GFP_ATOMIC);
 	if (!ctrlcmd) {
 		CDBG("msm_v4l2_s_fmt_cap: cannot allocate buffer\n");
 		return -ENOMEM;
 	}
 
-	ctrlcmd->type = MSM_V4L2_VID_CAP_TYPE;
-	ctrlcmd->length = sizeof(struct v4l2_format);
-	ctrlcmd->value = pfmt;
-	ctrlcmd->timeout_ms = 10000;
+  ctrlcmd->type       = MSM_V4L2_VID_CAP_TYPE;
+  ctrlcmd->length     = sizeof(struct v4l2_format);
+  ctrlcmd->value      = pfmt;
+  ctrlcmd->timeout_ms = 10000;
 
 	if (pfmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -1;
@@ -536,7 +556,8 @@ static int msm_v4l2_s_fmt_cap(struct file *f,
 	       sizeof(struct v4l2_format));
 #endif
 
-	g_pmsm_v4l2_dev->drv->ctrl(g_pmsm_v4l2_dev->drv->sync, ctrlcmd);
+	g_pmsm_v4l2_dev->drv->ctrl(ctrlcmd,
+		g_pmsm_v4l2_dev->drv->vmsm);
 
 	return 0;
 }
@@ -633,15 +654,18 @@ int msm_v4l2_read_proc(char *pbuf, char **start, off_t offset,
 }
 #endif
 
-static const struct v4l2_file_operations msm_v4l2_fops = {
+static const struct file_operations msm_v4l2_fops = {
 	.owner = THIS_MODULE,
 	.open = msm_v4l2_open,
+	.read = msm_v4l2_read,
 	.poll = msm_v4l2_poll,
 	.release = msm_v4l2_release,
-	.ioctl = msm_v4l2_ioctl,
+    .ioctl = msm_v4l2_ioctl,
+/*	.ioctl = video_ioctl2, */
+	.llseek = no_llseek
 };
 
-static void msm_v4l2_dev_init(struct msm_v4l2_device *pmsm_v4l2_dev)
+static void msm_v4l2_dev_init(struct msm_v4l2_device_t *pmsm_v4l2_dev)
 {
 	pmsm_v4l2_dev->read_queue_lock =
 	    __SPIN_LOCK_UNLOCKED(pmsm_v4l2_dev->read_queue_lock);
@@ -649,14 +673,14 @@ static void msm_v4l2_dev_init(struct msm_v4l2_device *pmsm_v4l2_dev)
 }
 
 static int msm_v4l2_try_fmt_cap(struct file *file,
-				void *fh, struct v4l2_format *f)
+				 void *fh, struct v4l2_format *f)
 {
 	/* FIXME */
 	return 0;
 }
 
 static int mm_v4l2_try_fmt_type_private(struct file *file,
-					void *fh, struct v4l2_format *f)
+					 void *fh, struct v4l2_format *f)
 {
 	/* FIXME */
 	return 0;
@@ -700,31 +724,32 @@ static const struct v4l2_ioctl_ops msm_ioctl_ops = {
 	.vidioc_s_jpegcomp = msm_v4l2_s_jpegcomp,
 };
 
-static int msm_v4l2_video_dev_init(struct video_device *pvd)
+static void msm_v4l2_video_dev_init(struct video_device *pvd)
 {
-	strncpy(pvd->name, MSM_APPS_ID_V4L2, sizeof(pvd->name));
+	strncpy(pvd->name, MSM_V4L2_DRIVER_NAME, strlen(MSM_V4L2_DRIVER_NAME));
+	pvd->vfl_type = VID_TYPE_CAPTURE;
 	pvd->fops = &msm_v4l2_fops;
 	pvd->release = msm_v4l2_release_dev;
 	pvd->minor = -1;
+
 	pvd->ioctl_ops = &msm_ioctl_ops;
-	return msm_v4l2_register(g_pmsm_v4l2_dev->drv);
 }
 
 static int __init msm_v4l2_init(void)
 {
-	int rc = -ENOMEM;
 	struct video_device *pvdev = NULL;
-	struct msm_v4l2_device *pmsm_v4l2_dev = NULL;
+	struct msm_v4l2_device_t *pmsm_v4l2_dev = NULL;
 	D("%s\n", __func__);
 
 	pvdev = video_device_alloc();
 	if (pvdev == NULL)
-		return rc;
+		return -ENOMEM;
 
-	pmsm_v4l2_dev = kzalloc(sizeof(struct msm_v4l2_device), GFP_KERNEL);
+	pmsm_v4l2_dev =
+		kzalloc(sizeof(struct msm_v4l2_device_t), GFP_KERNEL);
 	if (pmsm_v4l2_dev == NULL) {
 		video_device_release(pvdev);
-		return rc;
+		return -ENOMEM;
 	}
 
 	msm_v4l2_dev_init(pmsm_v4l2_dev);
@@ -733,23 +758,17 @@ static int __init msm_v4l2_init(void)
 	g_pmsm_v4l2_dev->pvdev = pvdev;
 
 	g_pmsm_v4l2_dev->drv =
-	    kzalloc(sizeof(struct msm_v4l2_driver), GFP_KERNEL);
+		kzalloc(sizeof(struct msm_driver), GFP_KERNEL);
 	if (!g_pmsm_v4l2_dev->drv) {
 		video_device_release(pvdev);
 		kfree(pmsm_v4l2_dev);
-		return rc;
+		return -ENOMEM;
 	}
 
-	rc = msm_v4l2_video_dev_init(pvdev);
-	if (rc < 0) {
-		video_device_release(pvdev);
-		kfree(g_pmsm_v4l2_dev->drv);
-		kfree(pmsm_v4l2_dev);
-		return rc;
-	}
+	msm_v4l2_video_dev_init(pvdev);
 
-	if (video_register_device(pvdev,
-			VFL_TYPE_GRABBER, MSM_V4L2_DEVNUM_YUV)) {
+	if (video_register_device(pvdev, VFL_TYPE_GRABBER,
+	    MSM_V4L2_DEVNUM_YUV)) {
 		D("failed to register device\n");
 		video_device_release(pvdev);
 		kfree(g_pmsm_v4l2_dev);
@@ -761,6 +780,7 @@ static int __init msm_v4l2_init(void)
 			       0, NULL, msm_v4l2_read_proc, NULL);
 #endif
 
+	/* ML - ???????? pmsm_v4l2_dev should be free. ????? */
 	return 0;
 }
 
@@ -774,7 +794,7 @@ static void __exit msm_v4l2_exit(void)
 	video_unregister_device(pvdev);
 	video_device_release(pvdev);
 
-	msm_v4l2_unregister(g_pmsm_v4l2_dev->drv);
+	msm_unregister(g_pmsm_v4l2_dev->drv, MSM_V4L2_DRIVER_NAME);
 
 	kfree(g_pmsm_v4l2_dev->drv);
 	g_pmsm_v4l2_dev->drv = NULL;
