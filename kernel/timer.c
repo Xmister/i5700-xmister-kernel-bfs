@@ -1053,7 +1053,7 @@ static unsigned long count_active_tasks(void)
  *
  * Requires xtime_lock to access.
  */
-unsigned long avenrun[3];
+//	unsigned long avenrun[3];
 
 EXPORT_SYMBOL(avenrun);
 
