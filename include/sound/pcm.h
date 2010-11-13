@@ -31,7 +31,7 @@
 #include <linux/bitops.h>
 
 /* For Android */
-#define ANDROID_BUF_NUM 32
+#define ANDROID_BUF_NUM 8
 
 #define snd_pcm_substream_chip(substream) ((substream)->private_data)
 #define snd_pcm_chip(pcm) ((pcm)->private_data)
@@ -1043,3 +1043,4 @@ static inline void snd_pcm_limit_isa_dma_size(int dma, size_t *max)
 #define PCM_RUNTIME_CHECK(sub) snd_BUG_ON(!(sub) || !(sub)->runtime)
 
 #endif /* __SOUND_PCM_H */
+
