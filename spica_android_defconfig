@@ -61,7 +61,7 @@ CONFIG_SYSFS_DEPRECATED_V2=y
 # CONFIG_RELAY is not set
 # CONFIG_NAMESPACES is not set
 CONFIG_BLK_DEV_INITRD=y
-CONFIG_INITRAMFS_SOURCE="/home/leshak/i5700/linux/initramfs/initrd.arm.initramfs_list"
+CONFIG_INITRAMFS_SOURCE="/home/xmister/i5700/initramfs_eclair/initrd.arm.initramfs_list"
 CONFIG_INITRAMFS_ROOT_UID=0
 CONFIG_INITRAMFS_ROOT_GID=0
 # CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
