@@ -1,7 +1,7 @@
 /*
  * Automatically generated C config: don't edit
  * Linux kernel version: 2.6.29
- * Sun Nov 28 21:04:36 2010
+ * Tue Nov 30 17:30:49 2010
  */
 #define AUTOCONF_INCLUDED
 #define CONFIG_VIDEO_V4L1_COMPAT 1
@@ -484,7 +484,7 @@
 #define CONFIG_CPU_S3C6410 1
 #define CONFIG_VIDEO_V4L1 1
 #define CONFIG_MMC 1
-#define CONFIG_INITRAMFS_SOURCE "/home/spica/i5700/initramfs/cm/initrd.arm.initramfs_list"
+#define CONFIG_INITRAMFS_SOURCE "/home/spica/i5700/initramfs/eclair/initrd.arm.initramfs_list"
 #define CONFIG_IKCONFIG_PROC 1
 #define CONFIG_VIDEO_V4L2 1
 #define CONFIG_CPU_PABRT_NOIFAR 1
